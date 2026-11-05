@@ -257,18 +257,48 @@ order: 1                       # 越小越靠前
 
 ---
 
-## 部署
+## 部署（GitHub Pages）
 
-推荐 Cloudflare Pages 或 Vercel，都免费：
+网站托在 **GitHub Pages** 上，免费、自带 HTTPS、不限流量。
+域名是 `manjingtou01.com`。
 
-1. 推到 GitHub
-2. 平台里连仓库，构建命令 `npm run build`，输出目录 `dist`
-3. 绑定域名
-4. 把域名填回 `astro.config.mjs` 的 `SITE`，重新部署
+### 怎么工作
 
-纯静态产物，没有服务端依赖，之后迁移到任何平台都很容易。
+```
+你在 Obsidian 写
+      ↓  npm run sync
+src/content/writing/  （本地）
+      ↓  git push
+GitHub 上自动构建（.github/workflows/deploy.yml）
+      ↓
+https://manjingtou01.com  上线
+```
 
----
+推送到 `main` 分支就会触发自动构建和发布。构建日志在仓库的 **Actions** 页面看。
+
+### 一条命令发布
+
+```bash
+npm run publish -- --push
+```
+
+它做三件事：从 Obsidian 同步 → 本地先构建一遍（构建失败就不推送，线上保持旧版）→ git 提交并推送。
+推上去之后 GitHub 接手，约 1 分钟线上更新。
+
+### 域名和 DNS 是怎么配的
+
+| 记录类型 | 主机记录 | 值 |
+| --- | --- | --- |
+| A × 4 | `@` | `185.199.108.153` / `.109.153` / `.110.153` / `.111.153` |
+| CNAME | `www` | `<你的用户名>.github.io` |
+
+仓库名必须是 `<你的用户名>.github.io`，否则网站地址会多一层、资源路径会裂。
+完整的开通步骤（买域名 → 建仓库 → 开 Pages → 配 DNS）写在上一级的 `上线指南.md`。
+
+### 换成别的托管
+
+产物是纯静态文件（`dist/`，1.3 MB），要换 Cloudflare Pages / Vercel / Netlify 随时可以，
+把 `astro.config.mjs` 里的 `site` 改掉、重新构建即可。
 
 ## 刻意没做的功能
 
