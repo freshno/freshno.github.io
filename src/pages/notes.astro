@@ -1,0 +1,60 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import NoteCard from '../components/NoteCard.astro';
+
+const notes = (await getCollection('notes')).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+
+// 按「年 月」分组
+const byMonth = new Map<string, typeof notes>();
+for (const n of notes) {
+  const d = n.data.date;
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  if (!byMonth.has(key)) byMonth.set(key, [] as unknown as typeof notes);
+  byMonth.get(key)!.push(n);
+}
+const months = [...byMonth.keys()].sort((a, b) => b.localeCompare(a));
+
+const zh = (key: string) => {
+  const [y, m] = key.split('-');
+  return `${y} 年 ${Number(m)} 月`;
+};
+---
+
+<Base title="日常" description="不值得单独成文、但不想让它就这么过去的瞬间，多数带图。">
+  <section class="wrap page-head">
+    <h1>日常</h1>
+    <p>短句、照片、当天的一个片段。大多不值得单独写成文章，但扔掉又可惜。点图片可以放大看。</p>
+  </section>
+
+  <div class="wrap">
+    {
+      months.map((key) => {
+        const items = byMonth.get(key)!;
+        const withPics = items.filter((n) => n.data.images.length > 0);
+        const mixed = withPics.length === items.length;
+        return (
+          <section class="section-tight">
+            <div class="sec-head">
+              <h2>{zh(key)}</h2>
+              <span class="sec-more">本月 {items.length} 条</span>
+            </div>
+            <div class:list={['notes', mixed && 'uniform']}>
+              {items.map((note) => (
+                <NoteCard
+                  date={note.data.date}
+                  images={note.data.images}
+                  location={note.data.location}
+                  text={(note.body ?? '').trim()}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })
+    }
+    {notes.length === 0 && <div class="empty">还没有记录。</div>}
+  </div>
+</Base>

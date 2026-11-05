@@ -1,0 +1,86 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Subscribe from '../../components/Subscribe.astro';
+
+export async function getStaticPaths() {
+  const posts = (await getCollection('writing', ({ data }) => !data.draft)).sort(
+    (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+  );
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: {
+      post,
+      newer: posts[i - 1] ?? null, // 更新的一篇
+      older: posts[i + 1] ?? null, // 更早的一篇
+    },
+  }));
+}
+
+const { post, newer, older } = Astro.props;
+const { Content, headings } = await render(post);
+
+const toc = headings.filter((h) => h.depth === 2);
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const d = post.data.date;
+const dateText = `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+
+// 中文按 350 字/分钟粗估
+const plain = (post.body ?? '').replace(/```[\s\S]*?```/g, '').replace(/[#>*`\-\[\]()!]/g, '');
+const minutes = Math.max(1, Math.round(plain.length / 350));
+---
+
+<Base title={post.data.title} description={post.data.summary} type="article" date={post.data.date}>
+  <article class:list={['wrap', 'post-layout', toc.length < 2 && 'no-toc']}>
+    <header class="post-head">
+      {post.data.tags.length > 0 && <div class="kicker">{post.data.tags.join(' · ')}</div>}
+      <h1>{post.data.title}</h1>
+      <div class="post-meta">
+        <span class="tnum">{dateText}</span>
+        <span class="sep">·</span>
+        <span class="tnum">约 {minutes} 分钟</span>
+        <span class="sep">·</span>
+        <span class="tnum">{plain.length.toLocaleString('zh-CN')} 字</span>
+      </div>
+    </header>
+
+    <div class="prose"><Content /></div>
+
+    {
+      toc.length >= 2 && (
+        <aside class="toc" data-toc aria-label="目录">
+          <div class="t">本文目录</div>
+          <ol>
+            {toc.map((h) => (
+              <li><a href={`#${h.slug}`}>{h.text}</a></li>
+            ))}
+          </ol>
+        </aside>
+      )
+    }
+
+    {(newer || older) && (
+      <nav class="post-nav" aria-label="文章导航">
+        {older ? (
+          <a href={`/writing/${older.id}`}>
+            <span class="dir">← 上一篇</span>
+            <span class="ttl">{older.data.title}</span>
+          </a>
+        ) : (
+          <span />
+        )}
+        {newer ? (
+          <a class="next" href={`/writing/${newer.id}`}>
+            <span class="dir">下一篇 →</span>
+            <span class="ttl">{newer.data.title}</span>
+          </a>
+        ) : (
+          <span />
+        )}
+      </nav>
+    )}
+
+    <div class="post-cta"><Subscribe /></div>
+  </article>
+</Base>

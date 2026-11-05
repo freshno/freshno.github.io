@@ -1,0 +1,72 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import WorkCard from '../components/WorkCard.astro';
+import Entry from '../components/Entry.astro';
+import Subscribe from '../components/Subscribe.astro';
+
+const all = await getCollection('work');
+const byStatus = (s: string) =>
+  all.filter((w) => w.data.status === s).sort((a, b) => a.data.order - b.data.order);
+
+const doing = byStatus('在做');
+const done = byStatus('做完了');
+// 「没做完的」用列表而不是卡片：它们是记录，不是战绩
+const dropped = byStatus('没做完').sort(
+  (a, b) => Number(b.data.year) - Number(a.data.year)
+);
+
+const sections = [
+  { key: 'doing', title: '正在进行', items: doing },
+  { key: 'done', title: '做完了的', items: done },
+].filter((s) => s.items.length > 0);
+---
+
+<Base title="项目" description="做过和正在做的东西，含技术栈与状态。">
+  <section class="wrap page-head">
+    <h1>项目</h1>
+    <p>大部分是给自己做的小工具。共同点是：需求没有经过验证，因为我就是那个用户。</p>
+  </section>
+
+  {
+    sections.map((s) => (
+      <section class="wrap section-tight">
+        <div class="sec-head"><h2>{s.title}</h2></div>
+        <div class="grid-2">
+          {s.items.map((item) => (
+            <WorkCard
+              title={item.data.title}
+              year={item.data.year}
+              status={item.data.status}
+              stack={item.data.stack}
+              summary={item.data.summary}
+              link={item.data.link}
+            />
+          ))}
+        </div>
+      </section>
+    ))
+  }
+
+  {
+    dropped.length > 0 && (
+      <section class="wrap section-tight">
+        <div class="sec-head"><h2>没做完的</h2></div>
+        <div class="entries">
+          {dropped.map((item) => (
+            <Entry
+              href={item.data.link ?? '#'}
+              date={new Date(Number(item.data.year) || 2020, 0, 1)}
+              title={item.data.title}
+              summary={item.data.summary}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  <section class="wrap section-tight">
+    <Subscribe />
+  </section>
+</Base>

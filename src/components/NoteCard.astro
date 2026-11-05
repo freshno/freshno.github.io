@@ -1,0 +1,48 @@
+---
+import { Image } from 'astro:assets';
+import { noteImage } from '../lib/note-images';
+
+interface NoteImage {
+  src: string;
+  caption: string;
+}
+interface Props {
+  date: Date;
+  images?: NoteImage[];
+  location?: string;
+  text: string;
+  slotHtml?: string;
+}
+
+const { date, images = [], location, text } = Astro.props;
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()];
+const when = `${pad(date.getMonth() + 1)} / ${pad(date.getDate())} · ${week}`;
+---
+
+<article class:list={['note', images.length === 0 && 'text-only']}>
+  {
+    images.map((img) => {
+      const meta = noteImage(img.src);
+      if (!meta) return null;
+      return (
+        <div class="shot" data-zoom data-cap={img.caption}>
+          <Image
+            src={meta}
+            alt={img.caption}
+            widths={[400, 800, 1400]}
+            sizes="(max-width: 620px) 100vw, (max-width: 1000px) 50vw, 33vw"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      );
+    })
+  }
+  <div class="txt">
+    <div class="when">{when}</div>
+    <p>{text}</p>
+    {location && <div class="where">{location}</div>}
+  </div>
+</article>

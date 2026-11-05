@@ -1,0 +1,66 @@
+---
+import '../styles/tokens.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Lightbox from '../components/Lightbox.astro';
+import * as C from '../consts';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** 文章页传 'article' */
+  type?: string;
+  date?: Date;
+}
+
+const { title, description = C.SITE_DESC, type = 'website', date } = Astro.props;
+const pageTitle = title ? `${title} · ${C.SITE_NAME}` : `${C.SITE_NAME} · ${C.SITE_TAGLINE}`;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://example.com').href;
+---
+
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate" type="application/rss+xml" title={C.SITE_NAME} href="/rss.xml" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="author" content={C.AUTHOR} />
+
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={C.SITE_NAME} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    {date && <meta property="article:published_time" content={date.toISOString()} />}
+    <meta name="twitter:card" content="summary" />
+
+    <!-- 首屏前套用已保存的主题，避免刷新闪烁。必须 is:inline，不能被打包延迟 -->
+    <script is:inline>
+      (function () {
+        try {
+          var d = document.documentElement;
+          var t = localStorage.getItem('mjt.theme');
+          if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          d.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body>
+    <a class="skip" href="#main">跳到正文</a>
+    <SiteHeader />
+    <main id="main"><slot /></main>
+    <SiteFooter />
+    <Lightbox />
+    <script>
+      import '../scripts/site.js';
+    </script>
+  </body>
+</html>

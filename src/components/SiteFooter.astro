@@ -1,0 +1,32 @@
+---
+import * as C from '../consts';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <div class="col-t">{C.SITE_NAME}</div>
+        <p class="about-line">{C.SITE_TAGLINE} 这里放写完的文章、做完和没做完的项目，还有一些不值得单独成文的日常。</p>
+      </div>
+      <div class="col">
+        <div class="col-t">浏览</div>
+        <a href="/writing">全部文章</a>
+        <a href="/work">项目</a>
+        <a href="/notes">日常</a>
+        <a href="/about">关于</a>
+      </div>
+      <div class="col">
+        <div class="col-t">联系</div>
+        <a href={`mailto:${C.EMAIL}`}>{C.EMAIL}</a>
+        <a href="/rss.xml">RSS</a>
+        {C.GITHUB && <a href={C.GITHUB} rel="me">GitHub</a>}
+      </div>
+    </div>
+    <div class="baseline">
+      <span>© {year} {C.SITE_NAME}</span>
+      <span>用 Astro 搭的，没有算法，没有推荐。</span>
+    </div>
+  </div>
+</footer>

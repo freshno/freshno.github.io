@@ -1,0 +1,21 @@
+{
+  "_说明": "这是模板。复制成 obsidian.config.json 再填你自己的库路径。",
+  "_为什么要复制": "obsidian.config.json 里写着你自己电脑上的路径，不进公开仓库。",
+
+  "vault": "~/Documents/Obsidian Vault",
+
+  "_sources": "⚠️ 白名单：只有这里列出的目录会被读取和发布，库里的其他任何目录都不读、不引用。",
+  "sources": [
+    { "folder": "发布留存/网站发布" }
+  ],
+
+  "defaultTags": [],
+  "outlineToLists": true,
+  "attachmentScope": "source",
+  "extractInlineTags": false,
+
+  "outDir": "src/content/writing",
+  "imageDir": "src/assets/images/writing",
+
+  "exclude": ["_*", "*.excalidraw.md", "README.md"]
+}

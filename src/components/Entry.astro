@@ -1,0 +1,34 @@
+---
+interface Props {
+  href: string;
+  date: Date;
+  title: string;
+  summary: string;
+  tags?: string[];
+  /** 列表页筛选用；传了就带 data-tags */
+  filterable?: boolean;
+}
+
+const { href, date, title, summary, tags = [], filterable = false } = Astro.props;
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const iso = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+---
+
+<a class="entry" href={href} data-tags={filterable ? tags.join('|') : undefined}>
+  <div class="date tnum">{iso}</div>
+  <div class="body">
+    <h3>{title}</h3>
+    <p class="sum">{summary}</p>
+    {
+      tags.length > 0 && (
+        <div class="tags">
+          {tags.map((t) => (
+            <span class="tag">{t}</span>
+          ))}
+        </div>
+      )
+    }
+  </div>
+  <span class="arrow" aria-hidden="true">→</span>
+</a>

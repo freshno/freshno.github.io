@@ -1,0 +1,21 @@
+图片素材说明
+================================================================
+
+【头像】avatar.svg / avatar.png
+  原创扁平插画，非官方素材，也没有临摹任何既有作品。
+  只使用了「银白发 / 深色面罩 / 斜戴护额」这类通用视觉元素的组合，
+  构图、五官、配色均为原创，不含任何角色专属设定。
+  著作权归本站作者。源文件是矢量 SVG，可直接改颜色与比例，
+  改完跑 `npm run avatar` 重建 PNG。
+
+【示例照片】images/notes/ 与 images/writing/
+  以下 5 张照片来自 Unsplash（Unsplash License，可免费商用），
+  **仅作为演示占位**，上线前请替换成你自己的照片。
+
+  morning-desk.jpg    工作台 · 晨间          unsplash photo-1499750310107-5fef28a66643
+  reading-shelf.jpg   夜里的书架            unsplash photo-1481627834876-b7833e8f5570
+  wall-lamp.jpg       墙上的台灯（竖图）     unsplash photo-1507473885765-e6ed057f782c
+  corner-cafe.jpg     街角咖啡店            unsplash photo-1493857671505-72967e2e2760
+  chair-plant.jpg     角落的椅子与绿植（竖图）unsplash photo-1517705008128-361805f42e86
+
+  正文插图：images/writing/white-space/desk.jpg 复用 morning-desk.jpg。

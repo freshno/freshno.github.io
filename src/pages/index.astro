@@ -1,0 +1,131 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import Entry from '../components/Entry.astro';
+import WorkCard from '../components/WorkCard.astro';
+import NoteCard from '../components/NoteCard.astro';
+import Subscribe from '../components/Subscribe.astro';
+import * as C from '../consts';
+
+const byDateDesc = (a: any, b: any) => b.data.date.valueOf() - a.data.date.valueOf();
+
+const writing = (await getCollection('writing', ({ data }) => !data.draft)).sort(byDateDesc);
+const work = (await getCollection('work')).sort((a, b) => a.data.order - b.data.order);
+const notes = (await getCollection('notes')).sort(byDateDesc);
+
+const latestWriting = writing.slice(0, 3);
+const featuredWork = [
+  ...work.filter((w) => w.data.status === '在做'),
+  ...work.filter((w) => w.data.status !== '在做'),
+].slice(0, 4);
+const latestNotes = notes.filter((n) => n.data.images.length > 0).slice(0, 3);
+
+const startedYear = writing.length
+  ? Math.min(...writing.map((w) => w.data.date.getFullYear()))
+  : new Date().getFullYear();
+const latestDate = writing[0]?.data.date;
+const pad = (n: number) => String(n).padStart(2, '0');
+---
+
+<Base>
+  <!-- ============ Hero ============ -->
+  <section class="wrap hero">
+    {
+      latestDate && (
+        <div class="eyebrow">
+          <span class="dot" aria-hidden="true" />
+          最近更新 {latestDate.getFullYear()}-{pad(latestDate.getMonth() + 1)}-{pad(latestDate.getDate())}
+        </div>
+      )
+    }
+    <h1>{C.SITE_TAGLINE}</h1>
+    <p class="lede">
+      这里放写完的文章、做完和没做完的项目，还有一些不值得单独成文、但不想让它就这么过去的日常。
+      没有算法，也没有推荐流。
+    </p>
+    <div class="meta-row">
+      <a href={`mailto:${C.EMAIL}`}>{C.EMAIL}</a>
+      <a href="/rss.xml">RSS 订阅</a>
+      <a href="/about">关于我</a>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n tnum">{writing.length}</div><div class="k">篇文章</div></div>
+      <div class="stat"><div class="n tnum">{work.length}</div><div class="k">个项目</div></div>
+      <div class="stat"><div class="n tnum">{notes.length}</div><div class="k">条日常</div></div>
+    </div>
+  </section>
+
+  <!-- ============ 最近在写 ============ -->
+  {
+    latestWriting.length > 0 && (
+      <section class="wrap section-tight">
+        <div class="sec-head">
+          <h2>最近在写</h2>
+          <a class="sec-more" href="/writing">全部 {writing.length} 篇 →</a>
+        </div>
+        <div class="entries">
+          {latestWriting.map((post) => (
+            <Entry
+              href={`/writing/${post.id}`}
+              date={post.data.date}
+              title={post.data.title}
+              summary={post.data.summary}
+              tags={post.data.tags}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  <!-- ============ 在做的东西 ============ -->
+  {
+    featuredWork.length > 0 && (
+      <section class="wrap section-tight">
+        <div class="sec-head">
+          <h2>在做的东西</h2>
+          <a class="sec-more" href="/work">全部 {work.length} 个 →</a>
+        </div>
+        <div class="grid-2">
+          {featuredWork.map((item) => (
+            <WorkCard
+              title={item.data.title}
+              year={item.data.year}
+              status={item.data.status}
+              stack={item.data.stack}
+              summary={item.data.summary}
+              link={item.data.link}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  <!-- ============ 日常 ============ -->
+  {
+    latestNotes.length > 0 && (
+      <section class="wrap section-tight">
+        <div class="sec-head">
+          <h2>日常</h2>
+          <a class="sec-more" href="/notes">全部 {notes.length} 条 →</a>
+        </div>
+        <div class="notes uniform">
+          {latestNotes.map((note) => (
+            <NoteCard
+              date={note.data.date}
+              images={note.data.images}
+              location={note.data.location}
+              text={(note.body ?? '').trim()}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  <section class="wrap section-tight">
+    <Subscribe />
+  </section>
+</Base>

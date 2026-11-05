@@ -1,0 +1,27 @@
+---
+interface Props {
+  title: string;
+  year: string;
+  status: string;
+  stack?: string[];
+  summary: string;
+  link?: string;
+  tags?: string[];
+}
+
+const { title, year, status, stack = [], summary, link, tags = [] } = Astro.props;
+const Tag = link ? 'a' : 'article';
+---
+
+<Tag class="card" href={link} target={link ? '_blank' : undefined} rel={link ? 'noopener' : undefined}>
+  <div class="card-top">
+    <div class="card-title">{title}</div>
+    <div class="card-year tnum">{year}</div>
+  </div>
+  <p>{summary}</p>
+  {stack.length > 0 && <p class="stack">{stack.join(' · ')}</p>}
+  <div class="tags">
+    <span class="tag">{status}</span>
+    {tags.map((t) => <span class="tag">{t}</span>)}
+  </div>
+</Tag>

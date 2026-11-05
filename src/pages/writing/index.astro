@@ -1,0 +1,72 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Entry from '../../components/Entry.astro';
+import Subscribe from '../../components/Subscribe.astro';
+
+const posts = (await getCollection('writing', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+
+const allTags = [...new Set(posts.flatMap((p) => p.data.tags))].sort();
+
+const byYear = new Map<number, typeof posts>();
+for (const p of posts) {
+  const y = p.data.date.getFullYear();
+  if (!byYear.has(y)) byYear.set(y, [] as unknown as typeof posts);
+  byYear.get(y)!.push(p);
+}
+const years = [...byYear.keys()].sort((a, b) => b - a);
+---
+
+<Base title="文章" description="按时间倒序排列的全部文章，可按标签筛选。">
+  <section class="wrap page-head">
+    <h1>文章</h1>
+    <p>写完就发，不排期。多数是做完一件事之后的复盘，偶尔是纯粹的随笔。按时间倒序排列。</p>
+  </section>
+
+  {
+    allTags.length > 0 && (
+      <div class="wrap">
+        <div class="filter-bar" data-filter-bar>
+          <span class="label">标签</span>
+          <button class="tag" data-filter="全部" aria-pressed="true">全部</button>
+          {allTags.map((t) => (
+            <button class="tag" data-filter={t} aria-pressed="false">{t}</button>
+          ))}
+          <span class="count tnum" data-count />
+        </div>
+      </div>
+    )
+  }
+
+  <div class="wrap">
+    {
+      years.map((year) => (
+        <section class="year-block" data-year-block>
+          <div class="year-label">
+            <span class="y">{year}</span>
+            <span class="c">{byYear.get(year)!.length} 篇</span>
+          </div>
+          <div class="entries">
+            {byYear.get(year)!.map((post) => (
+              <Entry
+                href={`/writing/${post.id}`}
+                date={post.data.date}
+                title={post.data.title}
+                summary={post.data.summary}
+                tags={post.data.tags}
+                filterable
+              />
+            ))}
+          </div>
+        </section>
+      ))
+    }
+    <div class="empty" data-empty style="display:none">这个标签下还没有文章。</div>
+  </div>
+
+  <section class="wrap section-tight">
+    <Subscribe />
+  </section>
+</Base>

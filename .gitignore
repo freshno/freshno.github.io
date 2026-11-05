@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.astro/
+.DS_Store
+*.log
+.env
+.env.production
+
+# 原图不进仓库
+src/assets/images/raw/
+
+# 里面写着你本机的库路径，不进公开仓库。模板见 obsidian.config.example.json
+obsidian.config.json

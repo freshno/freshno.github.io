@@ -1,0 +1,13 @@
+---
+import * as C from '../consts';
+---
+
+<div class="subscribe">
+  <div>
+    <h3>写得不勤，但每篇都认真</h3>
+    <p>订阅之后有新文章会发一封邮件，只有正文和链接，没有推广。随时可以退订。</p>
+  </div>
+  <a class="btn solid" href={`mailto:${C.EMAIL}?subject=${encodeURIComponent('订阅 manjingtou+')}`}>
+    邮件订阅
+  </a>
+</div>
