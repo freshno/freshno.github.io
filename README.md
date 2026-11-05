@@ -260,7 +260,7 @@ order: 1                       # 越小越靠前
 ## 部署（GitHub Pages）
 
 网站托在 **GitHub Pages** 上，免费、自带 HTTPS、不限流量。
-域名是 `manjingtou01.com`。
+域名是 `manjingtou01.me`。
 
 ### 怎么工作
 
@@ -271,7 +271,7 @@ src/content/writing/  （本地）
       ↓  git push
 GitHub 上自动构建（.github/workflows/deploy.yml）
       ↓
-https://manjingtou01.com  上线
+https://manjingtou01.me  上线
 ```
 
 推送到 `main` 分支就会触发自动构建和发布。构建日志在仓库的 **Actions** 页面看。

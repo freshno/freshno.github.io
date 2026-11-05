@@ -5,7 +5,7 @@ import sitemap from '@astrojs/sitemap';
 import rehypeFigure from './src/lib/rehype-figure.mjs';
 
 // 站点正式地址。改这一处，RSS / sitemap / 分享卡片 / 搜索引擎收录地址全部跟着变
-const SITE = process.env.SITE_URL || 'https://manjingtou01.com';
+const SITE = process.env.SITE_URL || 'https://manjingtou01.me';
 
 export default defineConfig({
   site: SITE,
