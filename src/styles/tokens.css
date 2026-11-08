@@ -318,6 +318,11 @@ button.tag[aria-pressed='true'] {
 .notes.uniform .note { margin-bottom: 0; display: flex; flex-direction: column; }
 .notes.uniform .note .txt { flex: 1; }
 .notes.uniform .note .shot img { aspect-ratio: 4 / 3; object-fit: cover; }
+/* 纯文字卡在等高网格里会被拉高，把文字居中，读起来像一张引语卡 */
+.notes.uniform .note.text-only .txt {
+  display: flex; flex-direction: column; justify-content: center;
+}
+.notes.uniform .note.text-only .txt p { font-size: 16px; line-height: 1.7; }
 
 .note {
   break-inside: avoid; margin-bottom: 18px;

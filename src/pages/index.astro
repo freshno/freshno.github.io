@@ -18,7 +18,8 @@ const featuredWork = [
   ...work.filter((w) => w.data.status === '在做'),
   ...work.filter((w) => w.data.status !== '在做'),
 ].slice(0, 4);
-const latestNotes = notes.filter((n) => n.data.images.length > 0).slice(0, 3);
+// 最新的 3 条日常，有没有配图都算 —— 只挑带图的会把纯文字日常藏掉
+const latestNotes = notes.slice(0, 3);
 
 const startedYear = writing.length
   ? Math.min(...writing.map((w) => w.data.date.getFullYear()))
