@@ -4,18 +4,21 @@
 
   "vault": "~/Documents/Obsidian Vault",
 
-  "_sources": "⚠️ 白名单：只有这里列出的目录会被读取和发布，库里的其他任何目录都不读、不引用。",
-  "sources": [
-    { "folder": "发布留存/网站发布" }
-  ],
+  "_root": "⚠️ 白名单：只有这个目录里面的内容会被读取和发布，库里其他任何目录都不读、不引用。",
+  "root": "发布留存/网站发布",
+
+  "_folders": "子文件夹名 → 内容类型。左边四个名字你可以随便改，右边四种类型固定就这四种。",
+  "folders": {
+    "文章": "writing",
+    "项目": "work",
+    "日常": "notes",
+    "关于": "page"
+  },
 
   "defaultTags": [],
   "outlineToLists": true,
   "attachmentScope": "source",
   "extractInlineTags": false,
-
-  "outDir": "src/content/writing",
-  "imageDir": "src/assets/images/writing",
 
   "exclude": ["_*", "*.excalidraw.md", "README.md"]
 }

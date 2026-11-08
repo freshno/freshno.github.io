@@ -43,4 +43,19 @@ const notes = defineCollection({
   }),
 });
 
-export const collections = { writing, work, notes };
+/**
+ * 固定页面（目前只有「关于」）。
+ * 版式在 src/pages/about.astro，文字内容放在这里。
+ */
+const pages = defineCollection({
+  loader: glob({ pattern: '**/*.md', base: './src/content/pages' }),
+  schema: z.object({
+    title: z.string(),
+    /** 侧栏那几行，都可选；不写就用默认值 */
+    doing: z.string().optional(),
+    located: z.string().optional(),
+    email: z.string().optional(),
+  }),
+});
+
+export const collections = { writing, work, notes, pages };

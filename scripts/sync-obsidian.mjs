@@ -261,12 +261,16 @@ async function importImage(nameOrPath, ctx) {
   const clean = decodeURIComponent(String(nameOrPath).split('|')[0].trim());
   const src = ctx.vaultFiles.get(path.basename(clean));
   if (!src) {
-    ctx.warnings.push(`图片找不到：「${clean}」不在库里，已跳过（该图不会出现在网站上）`);
+    ctx.warnings.push(`图片找不到：「${clean}」不在发布目录里，已跳过（该图不会出现在网站上）`);
     return null;
   }
   const safeName = path.basename(src).replace(/[^\p{L}\p{N}._-]+/gu, '-');
-  const destDir = path.join(ctx.imageDir, ctx.slug);
-  const dest = path.join(destDir, safeName);
+  // 文章/项目：每篇一个文件夹（src/assets/images/writing/<slug>/）
+  // 日常：所有配图平铺在一个文件夹里（src/assets/images/notes/），所以加 slug 前缀防重名
+  const flat = ctx.imagesPerSlug === false;
+  const destDir = flat ? ctx.imageDir : path.join(ctx.imageDir, ctx.slug);
+  const fileName = flat ? `${ctx.slug}-${safeName}` : safeName;
+  const dest = path.join(destDir, fileName);
   if (!ctx.dry) {
     await mkdir(destDir, { recursive: true });
     await copyFile(src, dest);
@@ -395,6 +399,31 @@ const clip = (s, n = 110) => (s.length > n ? s.slice(0, n).replace(/[,，、;；
 
 /* -------------------------------------------------- 单篇：读 → 转 */
 
+/** 从文件名里取日期：2026-11-08-窗边的桌子.md → 2026-11-08 */
+function dateFromFilename(name) {
+  const m = name.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+  return Number.isNaN(d.valueOf()) ? null : d;
+}
+
+/** 项目状态只认这三个词，写错或没写就按「在做」 */
+const WORK_STATUS = ['在做', '做完了', '没做完'];
+
+/**
+ * 日常笔记的配图走 frontmatter，不走正文 ——
+ * 因为日常卡片是「图在上、文字在下」的固定结构。
+ * 所以把正文里的图片抽出来，返回图片清单 + 去掉图片后的文字。
+ */
+function extractNoteImages(body) {
+  const images = [];
+  const cleaned = body.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_w, alt, href) => {
+    images.push({ src: path.basename(href), caption: (alt || '').trim() });
+    return '';
+  });
+  return { body: cleaned, images };
+}
+
 async function convertNote(file, ctx) {
   const raw = await readFile(file, 'utf8');
   const { data, body: rawBody } = splitFrontmatter(raw);
@@ -411,9 +440,10 @@ async function convertNote(file, ctx) {
     (h1 ? h1[1].trim() : '') ||
     baseName.replace(/^【\s*\d+\s*】\s*/, '').replace(/[*_`]/g, '').trim();
 
-  const slug = slugify(
-    (typeof data.slug === 'string' && data.slug) || title || baseName
-  );
+  // slug 由 runType 统一算好（含去重、「关于」的固定文件名），这里直接用，
+  // 不要在这里重算 —— 否则两处算法一旦分叉就会打架。
+  const slug =
+    ctx.slug || slugify((typeof data.slug === 'string' && data.slug) || title || baseName);
 
   let st;
   try {
@@ -422,7 +452,11 @@ async function convertNote(file, ctx) {
     st = { mtime: new Date() };
   }
   const date =
-    toDate(data.date) || toDate(data.created) || toDate(data.updated) || st.mtime;
+    toDate(data.date) ||
+    toDate(data.created) ||
+    toDate(data.updated) ||
+    dateFromFilename(baseName) ||
+    st.mtime;
 
   // 标签
   const rawTags = []
@@ -456,10 +490,19 @@ async function convertNote(file, ctx) {
   body = convertWikilinks(body, ctx.targetIndex);
   body = tidyBody(body, title);
 
+  // 日常：「图片在上、文字在下」是卡片固定结构，所以把图提到 frontmatter 里
+  let images = [];
+  if (ctx.type === 'notes') {
+    const r = extractNoteImages(body);
+    images = r.images;
+    body = tidyBody(r.body, title);
+    if (images.length) ctx.notes.push('图片 → 卡片配图');
+  }
+
   const tags = [...new Set([...ctx.sourceTags, ...inlineTags, ...rawTags])];
   const summary = makeSummary(data, body);
 
-  return {
+  const n = {
     slug,
     // 记成「相对库根」的路径：可读、可移植，不会把本机目录结构写进仓库
     source: path.relative(ctx.vault, file).split(path.sep).join('/'),
@@ -469,23 +512,89 @@ async function convertNote(file, ctx) {
     summary,
     draft: data.draft === true,
     body,
+    images,
     warnings: [],
   };
+
+  // ── 各类型专属字段 ──
+  if (ctx.type === 'work') {
+    const status = String(data.status ?? '').trim();
+    n.year =
+      data.year != null && String(data.year).trim()
+        ? String(data.year).trim()
+        : String(date.getFullYear());
+    n.status = WORK_STATUS.includes(status) ? status : '在做';
+    if (!WORK_STATUS.includes(status)) {
+      ctx.notes.push(`状态没填，按「在做」处理`);
+    }
+    n.stack = []
+      .concat(data.stack ?? data.tech ?? [])
+      .flatMap((t) => (Array.isArray(t) ? t : [t]))
+      .filter((t) => typeof t === 'string')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    n.link =
+      typeof data.link === 'string'
+        ? data.link.trim()
+        : typeof data.url === 'string'
+          ? data.url.trim()
+          : '';
+    n.order = Number.isFinite(Number(data.order)) ? Number(data.order) : 50;
+  }
+
+  if (ctx.type === 'page') {
+    n.doing = typeof data.doing === 'string' ? data.doing.trim() : '';
+    n.located = typeof data.located === 'string' ? data.located.trim() : '';
+    n.email = typeof data.email === 'string' ? data.email.trim() : '';
+    // 关于页里这些字段是可选的，空着就不写进 frontmatter
+  }
+
+  return n;
 }
 
-function renderNote(n) {
-  const fm = [
-    '---',
-    `title: ${yamlScalar(n.title)}`,
-    `date: ${ymd(n.date)}`,
-    `tags: [${n.tags.map(yamlScalar).join(', ')}]`,
-    `summary: ${yamlScalar(n.summary || n.title)}`,
-    ...(n.draft ? ['draft: true'] : []),
-    `${MARK}: ${yamlScalar(n.source)}`,
-    '---',
-    '',
-  ].join('\n');
-  return fm + n.body;
+function yamlList(arr) {
+  return `[${arr.map(yamlScalar).join(', ')}]`;
+}
+
+/** 按内容类型生成 frontmatter —— 每类集合要求的字段不一样 */
+function renderNote(n, t) {
+  const L = ['---', `title: ${yamlScalar(n.title)}`];
+
+  if (t.type === 'writing') {
+    L.push(
+      `date: ${ymd(n.date)}`,
+      `tags: ${yamlList(n.tags)}`,
+      `summary: ${yamlScalar(n.summary || n.title)}`
+    );
+    if (n.draft) L.push('draft: true');
+  } else if (t.type === 'work') {
+    L.push(
+      `year: ${yamlScalar(n.year)}`,
+      `status: ${n.status}`,
+      `stack: ${yamlList(n.stack)}`,
+      `summary: ${yamlScalar(n.summary || n.title)}`
+    );
+    if (n.link) L.push(`link: ${yamlScalar(n.link)}`);
+    L.push(`order: ${n.order}`);
+  } else if (t.type === 'notes') {
+    L.push(`date: ${ymd(n.date)}`);
+    if (n.images.length) {
+      L.push('images:');
+      for (const im of n.images) {
+        L.push(`  - src: ${yamlScalar(im.src)}`);
+        L.push(`    caption: ${yamlScalar(im.caption)}`);
+      }
+    } else {
+      L.push('images: []');
+    }
+  } else if (t.type === 'page') {
+    if (n.doing) L.push(`doing: ${yamlScalar(n.doing)}`);
+    if (n.located) L.push(`located: ${yamlScalar(n.located)}`);
+    if (n.email) L.push(`email: ${yamlScalar(n.email)}`);
+  }
+
+  L.push(`${MARK}: ${yamlScalar(n.source)}`, '---', '');
+  return L.join('\n') + n.body;
 }
 
 /** 判断一个产物文件是不是同步脚本生成的（手写文件绝不动） */
@@ -496,6 +605,38 @@ function isSynced(text) {
 }
 
 /* ---------------------------------------------------------- 主流程 */
+
+/** 四类内容：Obsidian 里的子文件夹 → 站点的内容集合 */
+const TYPE_DEFS = {
+  writing: {
+    label: '文章',
+    outDir: 'src/content/writing',
+    imageDir: 'src/assets/images/writing',
+    imagesPerSlug: true, // 每篇一个图片文件夹
+  },
+  work: {
+    label: '项目',
+    outDir: 'src/content/work',
+    imageDir: 'src/assets/images/work',
+    imagesPerSlug: true,
+  },
+  notes: {
+    label: '日常',
+    outDir: 'src/content/notes',
+    imageDir: 'src/assets/images/notes',
+    imagesPerSlug: false, // 所有配图平铺在一个文件夹里
+  },
+  page: {
+    label: '关于',
+    outDir: 'src/content/pages',
+    imageDir: 'src/assets/images/pages',
+    imagesPerSlug: true,
+    fixedSlug: 'about', // 关于永远只有一页
+  },
+};
+
+/** 默认的文件夹名，可以在 obsidian.config.json 的 folders 里改 */
+const DEFAULT_FOLDERS = { 文章: 'writing', 项目: 'work', 日常: 'notes', 关于: 'page' };
 
 async function loadConfig(args) {
   const cfgPath = path.join(SITE, 'obsidian.config.json');
@@ -508,6 +649,7 @@ async function loadConfig(args) {
       process.exit(1);
     }
   }
+
   const vault = expand(args.vault || cfg.vault || '');
   if (!vault || !existsSync(vault)) {
     console.error(`\n找不到 Obsidian 库：${vault || '(未配置)'}`);
@@ -515,149 +657,166 @@ async function loadConfig(args) {
     process.exit(1);
   }
   const vaultReal = path.resolve(vault);
-  let sources = cfg.sources ?? [];
-  if (args.folder) sources = [{ folder: args.folder }];
 
-  // ── 目录白名单守卫 ────────────────────────────────────────────
-  // 「别的文件夹禁止使用」是硬要求，不能靠自觉。这里做三道闸：
-  //   1. 必须有明确列出的源目录（空配置直接拒绝，绝不退化成"整个库"）
-  //   2. 源目录必须真的在库里面（挡住 .. 和绝对路径逃逸）
-  //   3. 源目录不能等于库根目录（那等于全库同步）
-  if (!sources.length) {
-    console.error('\n❌ obsidian.config.json 里没有配置任何 sources 目录。');
-    console.error('   为避免误发整个库，这里直接拒绝执行。请显式列出允许发布的目录。\n');
+  // 「没配」和「配成空字符串」要区别对待：
+  //   没配 → 用默认发布目录（方便）
+  //   配成空的 → 当作配置错误，直接拒绝（避免悄悄换了发布目录）
+  const hasRootKey = Object.prototype.hasOwnProperty.call(cfg, 'root');
+  const rootRel = args.folder || (hasRootKey ? cfg.root : '发布留存/网站发布');
+  const rootAbs = path.resolve(vaultReal, String(rootRel || ''));
+
+  // ── 目录白名单守卫 ─────────────────────────────────────────────
+  // 「别的文件夹禁止使用」是硬要求，不能靠自觉。三道闸：
+  //   1. 必须有明确的发布目录（空配置直接拒绝，绝不退化成"整个库"）
+  //   2. 发布目录必须真的在库里面（挡住 .. 和绝对路径逃逸）
+  //   3. 发布目录不能等于库根（那等于全库同步）
+  if (!rootRel || !String(rootRel).trim()) {
+    console.error('\n❌ obsidian.config.json 里没有配置发布目录 root。');
+    console.error('   为避免误发整个库，这里直接拒绝执行。\n');
     process.exit(1);
   }
-  for (const s of sources) {
-    if (!s?.folder || typeof s.folder !== 'string' || !s.folder.trim()) {
-      console.error('\n❌ sources 里有一项没有 folder 字段。\n');
-      process.exit(1);
+  const insideVault = rootAbs === vaultReal || rootAbs.startsWith(vaultReal + path.sep);
+  if (!insideVault) {
+    console.error(`\n❌ 发布目录越界：${rootRel}`);
+    console.error(`   解析后是 ${rootAbs}，不在库 ${vaultReal} 里面。拒绝执行。\n`);
+    process.exit(1);
+  }
+  if (rootAbs === vaultReal) {
+    console.error('\n❌ 发布目录不能是整个库根目录 —— 那会把库里所有笔记都发出去。');
+    console.error('   请指定一个专门的发布目录，例如 发布留存/网站发布。\n');
+    process.exit(1);
+  }
+
+  const folders = { ...DEFAULT_FOLDERS, ...(cfg.folders || {}) };
+  const excludes = cfg.exclude ?? ['_*', '*.excalidraw.md', 'README.md'];
+
+  // 把「子文件夹 → 内容类型」解析成绝对路径。目录还没建的类型安静跳过。
+  const types = [];
+  for (const [folderName, typeKey] of Object.entries(folders)) {
+    const def = TYPE_DEFS[typeKey];
+    if (!def) {
+      warn(`配置里的「${folderName}」对不上任何内容类型（${typeKey}），已忽略`);
+      continue;
     }
-    const abs = path.resolve(vaultReal, s.folder);
-    const insideVault = abs === vaultReal || abs.startsWith(vaultReal + path.sep);
-    if (!insideVault) {
-      console.error(`\n❌ 源目录越界：${s.folder}`);
-      console.error(`   解析后是 ${abs}，不在库 ${vaultReal} 里面。拒绝执行。\n`);
-      process.exit(1);
-    }
-    if (abs === vaultReal) {
-      console.error('\n❌ 源目录不能是整个库根目录 —— 那会把库里所有笔记都发出去。');
-      console.error('   请指定一个专门的发布目录，例如 发布留存/网站发布。\n');
-      process.exit(1);
-    }
+    const asDir = path.join(rootAbs, folderName);
+    const asFile = path.join(rootAbs, folderName + '.md');
+    let sourceDir = null;
+    let sourceFile = null;
+    if (existsSync(asDir) && (await stat(asDir)).isDirectory()) sourceDir = asDir;
+    else if (existsSync(asFile)) sourceFile = asFile;
+    else continue;
+
+    const outDir = args.out
+      ? path.resolve(args.out, typeKey)
+      : path.resolve(SITE, def.outDir);
+    const imageDir = args.images
+      ? def.imagesPerSlug
+        ? path.resolve(args.images, typeKey)
+        : path.resolve(args.images)
+      : path.resolve(SITE, def.imageDir);
+
+    types.push({
+      type: typeKey,
+      label: def.label,
+      folderName,
+      sourceDir,
+      sourceFile,
+      outDir,
+      imageDir,
+      imagesPerSlug: def.imagesPerSlug !== false,
+      fixedSlug: def.fixedSlug,
+    });
   }
 
   return {
     vault: vaultReal,
-    sources,
-    outDir: path.resolve(SITE, args.out || cfg.outDir || 'src/content/writing'),
-    imageDir: path.resolve(SITE, args.images || cfg.imageDir || 'src/assets/images/writing'),
+    root: rootAbs,
+    rootRel,
+    types,
     defaultTags: cfg.defaultTags ?? [],
     extractInlineTags: cfg.extractInlineTags === true,
     outlineToLists: cfg.outlineToLists !== false,
     // 'source'（默认）只在发布目录里找附件；'vault' 才允许引用库里任何位置的图片
     attachmentScope: (args.attachments || cfg.attachmentScope) === 'vault' ? 'vault' : 'source',
-    exclude: cfg.exclude ?? ['_*', '*.excalidraw.md', 'README.md'],
+    exclude: excludes,
   };
 }
 
-function isExcluded(file, vault, excludes) {
-  const relPath = path.relative(vault, file).split(path.sep).join('/');
-  const base = path.basename(file);
+function isExcluded(file, base, excludes) {
+  const relPath = path.relative(base, file).split(path.sep).join('/');
+  const name = path.basename(file);
   return excludes.some((pat) => {
-    if (pat.startsWith('_')) return relPath.split('/').some((seg) => seg.startsWith('_')) || base.startsWith('_');
-    if (pat.startsWith('*.')) return base.endsWith(pat.slice(1));
-    return relPath === pat || base === pat;
+    if (pat.startsWith('_')) {
+      return relPath.split('/').some((seg) => seg.startsWith('_')) || name.startsWith('_');
+    }
+    if (pat.startsWith('*.')) return name.endsWith(pat.slice(1));
+    return relPath === pat || name === pat;
   });
 }
 
-async function run(args) {
-  const cfg = await loadConfig(args);
+/** 处理一个内容类型：扫描 → 算 slug → 转换 → 写入 → 清理 */
+async function runType(cfg, t, args, vaultFiles, targetIndex) {
   const dry = !!args.dry;
 
-  // 1. 收集待同步的笔记
-  const files = [];
-  for (const src of cfg.sources) {
-    const dir = path.join(cfg.vault, src.folder);
-    if (!existsSync(dir)) {
-      warn(`源目录不存在：${src.folder}（在 ${cfg.vault} 下）`);
-      continue;
-    }
-    const all = await walkMd(dir);
-    const kept = all.filter((f) => !isExcluded(f, cfg.vault, cfg.exclude));
-    for (const f of kept) files.push({ file: f, tags: src.addTags ?? src.tags ?? [] });
-  }
+  // 1. 收集文件
+  let files = [];
+  if (t.sourceFile) files = [t.sourceFile];
+  else if (t.sourceDir) files = await walkMd(t.sourceDir);
+  files = files.filter((f) => !isExcluded(f, cfg.root, cfg.exclude));
 
-  if (args.json) {
-    // 只输出机器可读结果
-  } else {
-    log(`\n📥 库：${cfg.vault}`);
-    for (const s of cfg.sources) {
-      log(`   ✅ 允许：${s.folder}/`);
-    }
-    log(`   🚫 其余目录一律不读、不引用`);
-    log(`📂 输出 →  ${rel(cfg.outDir)}/`);
-    log(`   找到 ${files.length} 篇待处理${dry ? '（--dry 不写文件）' : ''}\n`);
-  }
-
-  // 附件索引范围：默认只在「发布目录」里找，别处的图片不引用
-  const scopeRoots =
-    cfg.attachmentScope === 'vault'
-      ? cfg.vault
-      : cfg.sources.map((s) => path.join(cfg.vault, s.folder));
-  const vaultFiles = await indexVaultFiles(scopeRoots);
-
-  // 2. 第一遍：算出所有 slug，建立双链索引
-  const ctxBase = {
-    dry,
-    vault: cfg.vault,
-    vaultFiles,
-    outDir: cfg.outDir,
-    imageDir: cfg.imageDir,
-    extractInlineTags: cfg.extractInlineTags,
-    outlineToLists: cfg.outlineToLists,
-    targetIndex: new Map(),
-  };
-
+  // 2. 算 slug
   const prelim = [];
-  const slugOwner = new Map();
-  for (const { file, tags } of files) {
+  const usedSlugs = new Set();
+  for (const file of files) {
     const raw = await readFile(file, 'utf8');
     const { data, body } = splitFrontmatter(raw);
+    if (data.publish === false) continue;
     const baseName = path.basename(file, '.md');
     const h1 = body.match(/^\s*#\s+(.+?)\s*$/m);
     const title =
       (typeof data.title === 'string' && data.title.trim()) ||
       (h1 ? h1[1].trim() : '') ||
       baseName.replace(/^【\s*\d+\s*】\s*/, '').replace(/[*_`]/g, '').trim();
-    const slug = slugify((typeof data.slug === 'string' && data.slug) || title || baseName);
-    if (slugOwner.has(slug)) {
-      warn(`slug 撞车：「${slug}」同时来自 ${rel(slugOwner.get(slug))} 和 ${rel(file)}，后者会加后缀`);
+
+    let slug;
+    if (t.fixedSlug) {
+      slug = t.fixedSlug;
+    } else {
+      slug = slugify((typeof data.slug === 'string' && data.slug) || title || baseName);
+      const base = slug;
+      let i = 2;
+      while (usedSlugs.has(slug)) slug = `${base}-${i++}`;
+      usedSlugs.add(slug);
     }
-    slugOwner.set(slug, file);
-    prelim.push({ file, tags, title, baseName, slug });
-  }
-  const usedSlugs = new Map();
-  for (const p of prelim) {
-    let s = p.slug;
-    let i = 2;
-    while (usedSlugs.has(s)) s = `${p.slug}-${i++}`;
-    usedSlugs.set(s, p.file);
-    p.slug = s;
-    ctxBase.targetIndex.set(p.baseName, { slug: s, title: p.title });
-    ctxBase.targetIndex.set(p.title, { slug: s, title: p.title });
+
+    prelim.push({ file, baseName, title, slug });
+
+    // 只有文章有详情页，才能当双链目标；项目和日常没有详情页，只保留文本
+    if (t.type === 'writing') {
+      targetIndex.set(baseName, { slug, title });
+      targetIndex.set(title, { slug, title });
+    }
   }
 
-  // 3. 第二遍：真正转换
+  // 3. 转换
   const results = [];
   const warnings = [];
   for (const p of prelim) {
     const ctx = {
-      ...ctxBase,
+      type: t.type,
+      dry,
+      vault: cfg.vault,
+      vaultFiles,
+      outDir: t.outDir,
+      imageDir: t.imageDir,
+      imagesPerSlug: t.imagesPerSlug,
+      extractInlineTags: cfg.extractInlineTags,
+      outlineToLists: cfg.outlineToLists,
+      targetIndex,
       slug: p.slug,
       assets: [],
       notes: [],
-      sourceTags: [...cfg.defaultTags, ...p.tags],
+      sourceTags: cfg.defaultTags,
       warnings,
     };
     const n = await convertNote(p.file, ctx);
@@ -670,113 +829,204 @@ async function run(args) {
     results.push(n);
   }
 
-  // 4. 写入 + 清理旧的同步产物
-  let added = 0,
-    updated = 0,
-    removed = 0;
+  // 4. 写入
+  let added = 0;
+  let updated = 0;
+  let removed = 0;
   const produced = new Set();
-
-  await mkdir(cfg.outDir, { recursive: true });
+  await mkdir(t.outDir, { recursive: true });
 
   for (const n of results) {
-    const dest = path.join(cfg.outDir, `${n.slug}.md`);
+    const dest = path.join(t.outDir, `${n.slug}.md`);
     produced.add(path.basename(dest));
-    const next = renderNote(n);
+    const next = renderNote(n, t);
     const prev = existsSync(dest) ? await readFile(dest, 'utf8') : null;
     if (prev === next) continue;
     if (prev === null) added++;
     else updated++;
     if (!dry) await writeFile(dest, next, 'utf8');
-    if (args.verbose || prev === null)
+    if (args.verbose || prev === null) {
       log(
-        `   ${prev === null ? '✚' : '✎'}  ${n.slug}.md` +
-          (n.tags.length ? `   [${n.tags.join(', ')}]` : '') +
+        `   ${prev === null ? '✚' : '✎'}  [${t.label}] ${n.slug}.md` +
+          (n.tags?.length ? `   [${n.tags.join(', ')}]` : '') +
           (n.transforms?.length ? `   · ${n.transforms.join('、')}` : '')
       );
-  }
-
-  // 图片清单：记录每个 slug 目录下「是同步脚本放进去的」文件，用于安全清理
-  if (!dry) {
-    for (const n of results) {
-      if (!n.assets?.length) continue;
-      const dir = path.join(cfg.imageDir, n.slug);
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        path.join(dir, IMG_MANIFEST),
-        JSON.stringify({ source: n.source, files: n.assets.map((a) => path.basename(a)) }, null, 2)
-      );
     }
   }
 
-  // 清理：文章删了 / 换图了，对应的图片也要跟着走，别让仓库里堆垃圾
+  // 5. 图片清单 + 清理旧图
   let imgRemoved = 0;
-  if (existsSync(cfg.imageDir)) {
-    const live = new Map(results.map((n) => [n.slug, new Set((n.assets ?? []).map((a) => path.basename(a)))]));
-    for (const entry of await readdir(cfg.imageDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const dir = path.join(cfg.imageDir, entry.name);
-      const mf = path.join(dir, IMG_MANIFEST);
-      if (!existsSync(mf)) continue; // 没有清单 → 不是同步脚本管的，绝不碰
-      let manifest = {};
-      try {
-        manifest = JSON.parse(await readFile(mf, 'utf8'));
-      } catch {}
-      const keep = live.get(entry.name);
-      for (const f of manifest.files ?? []) {
-        if (keep?.has(f)) continue;
-        const target = path.join(dir, f);
-        if (existsSync(target)) {
-          if (!dry) await rm(target);
-          imgRemoved++;
-        }
+  if (t.imagesPerSlug) {
+    if (!dry) {
+      for (const n of results) {
+        if (!n.assets?.length) continue;
+        const dir = path.join(t.imageDir, n.slug);
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          path.join(dir, IMG_MANIFEST),
+          JSON.stringify(
+            { source: n.source, files: n.assets.map((a) => path.basename(a)) },
+            null,
+            2
+          )
+        );
       }
-      if (!dry) {
-        if (!keep) {
-          await rm(mf, { force: true });
-          try {
-            if ((await readdir(dir)).length === 0) await rm(dir, { recursive: true });
-          } catch {}
-        } else {
-          await writeFile(
-            path.join(dir, IMG_MANIFEST),
-            JSON.stringify({ source: manifest.source, files: [...keep] }, null, 2)
-          );
+    }
+    if (existsSync(t.imageDir)) {
+      const live = new Map(
+        results.map((n) => [n.slug, new Set((n.assets ?? []).map((a) => path.basename(a)))])
+      );
+      for (const entry of await readdir(t.imageDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const dir = path.join(t.imageDir, entry.name);
+        const mf = path.join(dir, IMG_MANIFEST);
+        if (!existsSync(mf)) continue; // 没有清单 → 不是同步脚本管的，绝不碰
+        let manifest = {};
+        try {
+          manifest = JSON.parse(await readFile(mf, 'utf8'));
+        } catch {}
+        const keep = live.get(entry.name);
+        for (const f of manifest.files ?? []) {
+          if (keep?.has(f)) continue;
+          const target = path.join(dir, f);
+          if (existsSync(target)) {
+            if (!dry) await rm(target);
+            imgRemoved++;
+          }
+        }
+        if (!dry) {
+          if (!keep) {
+            await rm(mf, { force: true });
+            try {
+              if ((await readdir(dir)).length === 0) await rm(dir, { recursive: true });
+            } catch {}
+          } else {
+            await writeFile(
+              path.join(dir, IMG_MANIFEST),
+              JSON.stringify({ source: manifest.source, files: [...keep] }, null, 2)
+            );
+          }
         }
       }
     }
+  } else {
+    // 日常：图片平铺在一个文件夹里，用一份总清单记录哪些是同步脚本放的
+    const mf = path.join(t.imageDir, IMG_MANIFEST);
+    const current = new Set(results.flatMap((n) => (n.assets ?? []).map((a) => path.basename(a))));
+    let previous = [];
+    try {
+      previous = JSON.parse(await readFile(mf, 'utf8')).files ?? [];
+    } catch {}
+    for (const f of previous) {
+      if (current.has(f)) continue;
+      const target = path.join(t.imageDir, f);
+      if (existsSync(target)) {
+        if (!dry) await rm(target);
+        imgRemoved++;
+      }
+    }
+    if (!dry && current.size) {
+      await mkdir(t.imageDir, { recursive: true });
+      await writeFile(mf, JSON.stringify({ files: [...current] }, null, 2));
+    }
   }
 
-  for (const f of await readdir(cfg.outDir)) {
+  // 6. 清理：源文件删了，产物跟着删（手写文件没有同步标记，绝不动）
+  for (const f of await readdir(t.outDir)) {
     if (!f.endsWith('.md') || produced.has(f)) continue;
-    const full = path.join(cfg.outDir, f);
+    const full = path.join(t.outDir, f);
     if (isSynced(await readFile(full, 'utf8'))) {
       if (!dry) await rm(full);
       removed++;
-      log(`   ✖  删除 ${f}（源文件已不在发布目录）`);
+      log(`   ✖  删除 [${t.label}] ${f}（源文件已不在发布目录）`);
     } else if (args.verbose) {
-      log(`   ·  保留 ${f}（手写文件，没有同步标记）`);
+      log(`   ·  保留 [${t.label}] ${f}（手写文件，没有同步标记）`);
     }
   }
 
-  if (warnings.length) {
+  return { added, updated, removed, imgRemoved, total: results.length, warnings };
+}
+
+async function run(args) {
+  const cfg = await loadConfig(args);
+  const dry = !!args.dry;
+
+  // 一个内容类型都没建
+  if (!cfg.types.length) {
+    log(`\n📥 库：${cfg.vault}`);
+    log(`📂 发布目录：${cfg.rootRel}/`);
+    log(`\n⚠️  这个目录里还没有任何内容文件夹。请在 Obsidian 里建：`);
+    for (const [name, key] of Object.entries(DEFAULT_FOLDERS)) {
+      log(`     ${name}${key === 'page' ? '.md' : '/'}  → ${TYPE_DEFS[key].label}`);
+    }
     log('');
-    for (const w of new Set(warnings)) warn(w);
+    return { added: 0, updated: 0, removed: 0, total: 0 };
+  }
+
+  if (!args.json) {
+    log(`\n📥 库：${cfg.vault}`);
+    log(`   ✅ 允许：${cfg.rootRel}/`);
+    log(`   🚫 其余目录一律不读、不引用`);
+    log(
+      `📂 内容类型：` +
+        cfg.types
+          .map((t) =>
+            t.label === t.folderName
+              ? `${t.folderName}${t.sourceDir ? '/' : '.md'}`
+              : `${t.folderName}${t.sourceDir ? '/' : '.md'}（${t.label}）`
+          )
+          .join('  ·  ')
+    );
+    log('');
+  }
+
+  const scopeRoots = cfg.attachmentScope === 'vault' ? cfg.vault : [cfg.root];
+  const vaultFiles = await indexVaultFiles(scopeRoots);
+  const targetIndex = new Map();
+
+  const sum = { added: 0, updated: 0, removed: 0, imgRemoved: 0, total: 0 };
+  const allWarnings = [];
+
+  for (const t of cfg.types) {
+    if (!args.json) {
+      const head = t.label === t.folderName ? t.label : `${t.folderName}（${t.label}）`;
+      log(`── ${head} → ${rel(t.outDir)}/`);
+    }
+    const r = await runType(cfg, t, args, vaultFiles, targetIndex);
+    sum.added += r.added;
+    sum.updated += r.updated;
+    sum.removed += r.removed;
+    sum.imgRemoved += r.imgRemoved;
+    sum.total += r.total;
+    allWarnings.push(...r.warnings);
+    if (!args.json) {
+      const changed = r.added || r.updated || r.removed;
+      log(`   ${changed ? '' : '（无变化）'}共 ${r.total} 条`);
+      log('');
+    }
+  }
+
+  const uniqWarnings = [...new Set(allWarnings)];
+  if (uniqWarnings.length && !args.json) {
+    for (const w of uniqWarnings) warn(w);
+    log('');
   }
 
   if (args.json) {
-    console.log(JSON.stringify({ added, updated, removed, total: results.length, warnings: [...new Set(warnings)] }));
+    console.log(JSON.stringify({ ...sum, warnings: uniqWarnings }));
   } else {
     log(
-      `\n${dry ? '（试运行）' : ''}完成：新增 ${added} · 更新 ${updated} · 删除 ${removed} · 共 ${results.length} 篇` +
-        (imgRemoved ? ` · 清理图片 ${imgRemoved} 张` : '')
+      `${dry ? '（试运行）' : ''}合计：新增 ${sum.added} · 更新 ${sum.updated} · 删除 ${sum.removed}` +
+        ` · 共 ${sum.total} 条` +
+        (sum.imgRemoved ? ` · 清理图片 ${sum.imgRemoved} 张` : '')
     );
-    if (!dry && (added || updated || removed)) {
+    if (!dry && (sum.added || sum.updated || sum.removed)) {
       log(`下一步：npm run build   （或 npm run publish 一条龙）\n`);
     } else {
       log('');
     }
   }
-  return { added, updated, removed, total: results.length };
+  return sum;
 }
 
 /* ---------------------------------------------------------- 入口 */
@@ -800,13 +1050,10 @@ if (args.watch) {
       running = false;
     }, 400);
   };
-  log(`👀 监听中：${cfg.vault}/${cfg.sources.map((s) => s.folder).join('、')}`);
+  log(`👀 监听中：${cfg.vault}/${cfg.rootRel}`);
   log('   在 Obsidian 里保存就会自动同步。Ctrl+C 退出。\n');
   await run(args);
-  for (const s of cfg.sources) {
-    const dir = path.join(cfg.vault, s.folder);
-    if (existsSync(dir)) fsWatch(dir, { recursive: true }, trigger);
-  }
+  if (existsSync(cfg.root)) fsWatch(cfg.root, { recursive: true }, trigger);
 } else {
   await run(args);
 }

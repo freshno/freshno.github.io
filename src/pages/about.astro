@@ -1,13 +1,26 @@
 ---
 import { Image } from 'astro:assets';
+import { getEntry, render } from 'astro:content';
 import Base from '../layouts/Base.astro';
 import * as C from '../consts';
 import avatar from '../assets/images/avatar.png';
+
+// 「关于」的文字内容可以从 Obsidian 的 关于.md 同步过来；
+// 版式（左边头像 + 右边文字）固定在这里。
+const entry = await getEntry('pages', 'about');
+const rendered = entry ? await render(entry) : null;
+const Content = rendered?.Content ?? null;
+const d = entry?.data ?? {};
+
+const doing = d.doing || '（待填写）';
+const located = d.located || '（待填写）';
+const email = d.email || C.EMAIL;
+const title = d.title || '关于';
 ---
 
-<Base title="关于" description={`关于 ${C.SITE_NAME}，以及它怎么被做出来的。`}>
+<Base title={title} description={`关于 ${C.SITE_NAME}，以及它怎么被做出来的。`}>
   <section class="wrap page-head">
-    <h1>关于</h1>
+    <h1>{title}</h1>
   </section>
 
   <section class="wrap">
@@ -17,51 +30,25 @@ import avatar from '../assets/images/avatar.png';
           <Image src={avatar} alt={`${C.SITE_NAME} 的头像`} widths={[300, 600]} loading="eager" />
         </div>
         <div class="kv">
-          <!-- 下面几行按你的真实情况改；不知道的就删掉整行 -->
-          <div class="row"><span class="k">在做</span><span class="v">（待填写）</span></div>
-          <div class="row"><span class="k">所在</span><span class="v">（待填写）</span></div>
+          <div class="row"><span class="k">在做</span><span class="v">{doing}</span></div>
+          <div class="row"><span class="k">所在</span><span class="v">{located}</span></div>
           <div class="row">
             <span class="k">邮箱</span>
-            <span class="v"><a class="link" href={`mailto:${C.EMAIL}`}>{C.EMAIL}</a></span>
+            <span class="v"><a class="link" href={`mailto:${email}`}>{email}</a></span>
           </div>
         </div>
       </aside>
 
       <div class="prose">
-        <p>
-          你好，欢迎来到 <strong>{C.SITE_NAME}</strong>。
-        </p>
-        <p>
-          这个站点用来放三样东西：写过的文章、做过的项目，还有一些不成文的日常。
-          「{C.SITE_TAGLINE}」是这里唯一的原则 —— 我试过同时推进很多件事，
-          最后发现真正做完的，都是被慢慢做出来的那些。
-        </p>
-
-        <h2 id="about-site">关于这个网站</h2>
-        <p>它存在的理由很朴素：我需要一个不会被算法打断、不会因为平台关门而消失的地方放我的东西。</p>
-        <ul>
-          <li>没有评论、没有点赞、没有浏览量统计。想交流就给我写信，我基本都会回。</li>
-          <li>文章用 Markdown 写，图片走一条自己的处理流程，写完推送即可发布。</li>
-          <li>正文不用任何网络字体，首屏不加载图片。打开的瞬间就该能读。</li>
-        </ul>
-
-        <h2 id="about-now">现在</h2>
-        <!-- TODO 替换成你自己「此刻在做的事」。这是这类站点最值钱的一栏，建议每季度更新一次。 -->
-        <p>
-          正在做的事、正在读的书、正在学的工具 —— 这一栏留给你自己填。
-          它的价值在于：五年后回看这里，你能想起当时在想什么。
-        </p>
-
-        <h2 id="about-stack">这个网站怎么做的</h2>
-        <p>
-          静态站点，Markdown 驱动，构建产物是纯 HTML。样式只有一套令牌（
-          <code>src/styles/tokens.css</code>），改一个变量全站跟着变。
-        </p>
-        <p>技术上的取舍很简单：不引入任何运行时框架，图片交给构建期处理，能静态化的全部静态化。</p>
-
-        <h2 id="about-contact">联系我</h2>
-        <p>邮件最好，我基本都会回。如果是具体的问题，写清楚背景我会更愿意认真回答。</p>
-        <p><a class="link" href={`mailto:${C.EMAIL}`}>{C.EMAIL}</a> · <a class="link" href="/rss.xml">RSS</a></p>
+        {
+          Content ? (
+            <Content />
+          ) : (
+            <p>
+              还没写。在 Obsidian 的 <code>发布留存/网站发布/关于.md</code> 里写完，同步一下就有了。
+            </p>
+          )
+        }
       </div>
     </div>
   </section>
