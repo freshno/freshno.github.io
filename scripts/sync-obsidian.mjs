@@ -63,8 +63,9 @@ function slugify(name) {
       .normalize('NFKC')
       .replace(/^【\s*\d+\s*】\s*/, '') // 【0531】标题 → 标题
       .replace(/^\[[^\]]*\]\s*/, '')
-      .replace(/[*_`~<>:"/\\|?]/g, '')
+      .replace(/[*_`~<>:"/\\|?]+/g, '-')
       .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/-+/g, '-')
       .replace(/^-+|-+$/g, '')
       .toLowerCase()
       .slice(0, 80) || 'untitled'
