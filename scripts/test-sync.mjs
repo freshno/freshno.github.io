@@ -148,6 +148,21 @@ ok('doing 保留', /^doing: 做产品、写代码$/m.test(pg));
 ok('located 保留', /^located: 杭州$/m.test(pg));
 ok('正文是 markdown 段落', pg.includes('你好，欢迎来到'));
 
+console.log('\n[7.5] 日期稳定性 —— 改了老文章，发布日期不该变');
+{
+  const { utimes } = await import('node:fs/promises');
+  const target = path.join(OUT, 'writing', '大纲笔记.md');
+  const before = (await read(target)).match(/^date: (\d{4}-\d{2}-\d{2})$/m)?.[1];
+  // 模拟「一年后又编辑了一次」：只改文件的修改时间，内容不动
+  const future = new Date('2027-06-01T10:00:00');
+  await utimes(path.join(TMP, '发布留存/网站发布/文章/大纲笔记.md'), future, future);
+  await utimes(path.join(TMP, '发布留存/网站发布/日常/2026-11-08-窗边的桌子.md'), future, future);
+  sync(['--out', OUT, '--images', IMG]);
+  const after = (await read(target)).match(/^date: (\d{4}-\d{2}-\d{2})$/m)?.[1];
+  ok('没写 date 的文章，重新编辑后仍保留首次发布日期', before === after, `${before} → ${after}`);
+  ok('日期不是今天（2027-06-01 没被采用）', after !== '2027-06-01', after);
+}
+
 console.log('\n[8] 幂等 —— 连跑两次不该有任何改动');
 const second = sync(['--out', OUT, '--images', IMG]);
 ok('第二次 0 新增 0 更新 0 删除', /新增 0 · 更新 0 · 删除 0/.test(second), second.trim().split('\n').pop());

@@ -452,12 +452,14 @@ async function convertNote(file, ctx) {
   } catch {
     st = { mtime: new Date() };
   }
-  const date =
-    toDate(data.date) ||
-    toDate(data.created) ||
-    toDate(data.updated) ||
-    dateFromFilename(baseName) ||
-    st.mtime;
+  // 日期来源分三种，后面要靠它判断「这个日期稳不稳」：
+  //   frontmatter → 你手写的，最权威
+  //   filename    → 文件名里的日期，稳定
+  //   mtime       → 文件修改时间，**不稳定**（改个错别字就变）
+  const explicitDate = toDate(data.date) || toDate(data.created) || toDate(data.updated);
+  const nameDate = dateFromFilename(baseName);
+  const date = explicitDate || nameDate || st.mtime;
+  const dateSource = explicitDate ? 'frontmatter' : nameDate ? 'filename' : 'mtime';
 
   // 标签
   const rawTags = []
@@ -514,6 +516,7 @@ async function convertNote(file, ctx) {
     draft: data.draft === true,
     body,
     images,
+    dateSource,
     warnings: [],
   };
 
@@ -840,8 +843,21 @@ async function runType(cfg, t, args, vaultFiles, targetIndex) {
   for (const n of results) {
     const dest = path.join(t.outDir, `${n.slug}.md`);
     produced.add(path.basename(dest));
-    const next = renderNote(n, t);
     const prev = existsSync(dest) ? await readFile(dest, 'utf8') : null;
+
+    // 日期稳定性：如果这次算出来的日期来自「文件修改时间」（说明你没写 date），
+    // 就沿用上一次发布的日期 —— 否则改个错别字会把老文章的发布日期改到今天，
+    // 整篇文章会莫名其妙跳到首页最前面。
+    if (prev && n.dateSource === 'mtime') {
+      const m = prev.match(/^date:\s*(\d{4}-\d{2}-\d{2})\s*$/m);
+      const kept = m && toDate(m[1]);
+      if (kept) {
+        n.date = kept;
+        n.transforms = [...(n.transforms ?? []), '沿用原发布日期'];
+      }
+    }
+
+    const next = renderNote(n, t);
     if (prev === next) continue;
     if (prev === null) added++;
     else updated++;
